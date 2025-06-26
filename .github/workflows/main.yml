@@ -1,47 +1,64 @@
+# .github/workflows/deploy.yml
+# 🚀 Pipeline de CI/CD para despliegue local con un Self-Hosted Runner
+
 name: CI/CD – Micro Product Deploy
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: [ "main" ]  # Activar cuando se haga push a la rama principal
+  workflow_dispatch:  # Permite ejecutar el pipeline manualmente
 
+# Variables de entorno para que docker-compose las use
 env:
-  DOCKER_PROJECT_NAME: product_app
-  APP_CONTAINER_NAME: product_app_2025
-  SONAR_PROJECT_KEY: product-app
-  SONAR_HOST_URL: http://localhost:9000
-  SONAR_TOKEN: squ_d9e2e7dd59a8a2e40ccd3fce9fa673b85db1af47
+  DOCKER_PROJECT_NAME: 'product_app'  # Nombre del proyecto Docker
+  APP_CONTAINER_NAME: 'product_app_2025'  # Nombre del contenedor de la app
+  DB_CONTAINER_NAME: 'mysql-product'  # Si usas una base de datos, puedes definirla aquí
+  DB_NAME: 'product_db'  # Nombre de la base de datos (si aplica)
+  DB_USER: 'root'  # Usuario para la base de datos
+  DB_PASSWORD: 'admin123'  # Contraseña para la base de datos
 
 jobs:
-  build_analyze_deploy:
-    runs-on: self-hosted
+  build_and_deploy:
+    name: Build and Deploy Locally
+    runs-on: self-hosted  # Utiliza el Self-Hosted Runner
 
     steps:
+      # 1. Descargar el código del repositorio en el runner
       - name: 📥 Checkout del código
         uses: actions/checkout@v4
 
+      # 2. Configurar el entorno de Java 17
       - name: ☕ Configurar Java 17
         uses: actions/setup-java@v4
         with:
-          java-version: 17
-          distribution: temurin
-          cache: maven
+          java-version: '17'  # Versión de Java
+          distribution: 'temurin'  # Distribución de OpenJDK
+          cache: maven  # Usar caché de Maven
 
+      # 3. Construir el proyecto y crear el .jar con Maven
       - name: ⚙️ Construir el .jar con Maven
         run: mvn clean package -DskipTests
 
-      - name: 📊 Análisis con SonarQube
-        run: |
-          mvn sonar:sonar \
-            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }} \
-            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
-            -Dsonar.login=${{ env.SONAR_TOKEN }}
-
+      # 4. Desplegar la aplicación usando Docker Compose
       - name: 🚀 Despliegue con Docker Compose
         run: |
           echo "🔧 Desplegando aplicación..."
+
+          # Navegar al directorio donde está docker-compose.yml
           cd docker
-          docker-compose -p $DOCKER_PROJECT_NAME down -v --remove-orphans || true
-          docker-compose -p $DOCKER_PROJECT_NAME up -d --build
-          echo "📋 Logs recientes:"
-          docker logs --tail 50 $APP_CONTAINER_NAME
+
+          # Limpiar cualquier despliegue anterior
+          docker-compose -p ${{ env.DOCKER_PROJECT_NAME }} down -v --remove-orphans || echo "⚠️ No se encontró un despliegue anterior para limpiar."
+
+          # Construir la nueva imagen de la app y levantar los servicios
+          docker-compose -p ${{ env.DOCKER_PROJECT_NAME }} up -d --build
+
+          # Verificar estado de los contenedores
+          echo "🔍 Verificando estado de los contenedores..."
+          docker-compose -p ${{ env.DOCKER_PROJECT_NAME }} ps
+
+          # Mostrar los últimos logs de la aplicación
+          echo "🗒️ Mostrando los últimos logs de la aplicación:"
+          docker logs --tail 50 ${{ env.APP_CONTAINER_NAME }}
+
+          echo "🎉 ✓ Despliegue completado exitosamente."
